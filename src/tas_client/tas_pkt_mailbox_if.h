@@ -35,9 +35,9 @@ public:
 	virtual ~CTasPktMailboxIf() = default;
 
 	//! \brief Configure receive timeout and response packet size.
-	//! \param timeout_receive_ms timeout value in milliseconds
+	//! \param timeout_ms timeout value in milliseconds
 	//! \param max_num_bytes_rsp maximum size of a response in bytes
-	virtual void config(uint32_t timeout_receive_ms, uint32_t max_num_bytes_rsp) = 0;
+	virtual void config(uint32_t timeout_ms, uint32_t max_num_bytes_rsp) = 0;
 
 	//! \brief Check if connected.
 	//! \returns \c true if yes, otherwise \c false

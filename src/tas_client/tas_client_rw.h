@@ -87,11 +87,11 @@ public:
 	//! \brief Read/Write client object constructor
 	//! \param client_name Mandatory client name as a c-string
 	explicit CTasClientRw(const char* client_name)
-		: CTasClientRwBase(CTasPktHandlerRw::PKT_BUF_SIZE_DEFAULT)
+		: CTasClientRwBase(CTasPktHandlerRw::RSP_PKT_BUF_SIZE_DEFAULT)
 		, CTasClientServerCon(client_name, &mEi)
 	{
 		mMbIfRw = mMbSocket;
-		mMbIfRw->config(rw_get_timeout(), CTasPktHandlerRw::PKT_BUF_SIZE_DEFAULT);
+		mMbIfRw->config(rw_get_timeout(), CTasPktHandlerRw::RSP_PKT_BUF_SIZE_DEFAULT);
 	};
 
 	//! \brief Read/Write client object constructor

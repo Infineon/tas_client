@@ -85,7 +85,7 @@ private:
 
 	CTasTcpSocket* mSocket = nullptr;		//!< \brief Pointer to a socket instance which is connected to a TAS server
 
-	uint32_t mTimeoutReceiveMs = 0;	//!< \brief Timeout value in milliseconds for the receive operation
+	uint32_t mTimeoutMs = 0;	//!< \brief Timeout value in milliseconds for the receive operation
 
 	uint32_t  mMaxNumBytesRsp = 0;	//!< \brief Defines the maximum number of bytes in a response packet
 

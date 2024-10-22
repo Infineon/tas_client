@@ -69,7 +69,7 @@ class TasClientRwBase{
 
 	    TasClientRwBase(CTasClientRwBase& c);
 
-		TasClientRwBase(uint32_t max_rsp_size = CTasPktHandlerRw::PKT_BUF_SIZE_DEFAULT);
+		TasClientRwBase(uint32_t max_rsp_size = CTasPktHandlerRw::RSP_PKT_BUF_SIZE_DEFAULT);
 
 	private:
 		CTasClientRwBase* clientRwBase;

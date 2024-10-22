@@ -83,7 +83,8 @@ class TasClientApiRecipe(ConanFile):
 
     def requirements(self):
         # define dependencies
-        self.requires("pybind11/2.12.0")
+        if self.options.python:
+            self.requires("pybind11/2.13.5")
 
     def build_requirements(self):
         # define build tools dependencies

@@ -119,7 +119,7 @@ int main(int argc, char** argv)
     }
 
 
-    constexpr size_t BUF_SIZE = 64;
+    constexpr size_t BUF_SIZE = 2048;
     std::array<uint32_t, BUF_SIZE> rdData;
     std::array<uint32_t, BUF_SIZE> wrData;
     uint32_t addr;
@@ -227,7 +227,23 @@ int main(int argc, char** argv)
     printf("Write transaction: %08X\n", wrData[0]);
     printf("Read transaction:  %08X\n", rdData[1]);
 
-    // Destructor of clientRw will automatically end the session
+    // Large packet
+    constexpr uint32_t c_dwBuffSizeJL{16*1024};
+    uint32_t dwNumBytesOK{};
+    std::array<uint32_t, c_dwBuffSizeJL> jlrdData;
 
+    tasutil_assert(clientRw.read(0x70000000, jlrdData.data(), c_dwBuffSizeJL * sizeof(uint32_t), &dwNumBytesOK));
+
+    // expected to fail because the response packet does not fit in to default response packet size PKT_BUF_SIZE_DEFAULT
+    constexpr uint32_t c_buffSizeFail{16*1024 + 256}; 
+    uint32_t numBytesOKFail{};
+    std::array<uint32_t, c_buffSizeFail> rdDataFail;
+
+    ret = clientRw.read(0x70000000, rdDataFail.data(), c_buffSizeFail * sizeof(uint32_t), &numBytesOKFail);
+    if (ret != TAS_ERR_NONE) { // catch the error the result should be TAS_ERR_FN_PARAM
+        printf("Expected %s\n", clientRw.get_error_info());
+    }
+
+    // Destructor of clientRw will automatically end the session
     return 0;
 }

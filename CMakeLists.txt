@@ -15,7 +15,7 @@ cmake_minimum_required(VERSION "${MIN_VER_CMAKE}" FATAL_ERROR)
 # Project definition
 # -----------------------------------------------------------------------------
 project(tas_client_api
-    VERSION 1.0.1
+    VERSION 1.0.2
     DESCRIPTION "Infineon's Tool Access Socket (TAS) Client API"
     HOMEPAGE_URL "https://github.com/Infineon/tas_client_api"
     LANGUAGES CXX

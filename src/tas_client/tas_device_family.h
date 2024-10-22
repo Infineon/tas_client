@@ -108,8 +108,8 @@ enum tas_device_type_t: uint32_t {
     TAS_DT_DAPEA2G = 0x0000DA9E,  // A2G DAPE connection
 
     // TC4x
-    TAS_DT_TC41X   = 0x0021B083,
-    TAS_DT_TC41X_A = 0x1021B083,
+    TAS_DT_TC41X   = 0x00218083,
+    TAS_DT_TC41X_A = 0x10218083,
 
     TAS_DT_TC42X   = 0x00219083,
     TAS_DT_TC42X_A = 0x10219083,
@@ -117,8 +117,8 @@ enum tas_device_type_t: uint32_t {
     TAS_DT_TC44X   = 0x0021A083,
     TAS_DT_TC44X_A = 0x1021A083,
 
-    TAS_DT_TC45X   = 0x00226083,
-    TAS_DT_TC45X_A = 0x10226083,
+    TAS_DT_TC45X   = 0x0021B083,
+    TAS_DT_TC45X_A = 0x1021B083,
 
     TAS_DT_TC46X   = 0x0021C083,
     TAS_DT_TC46X_A = 0x1021C083,

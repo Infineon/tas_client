@@ -26,12 +26,34 @@
 #include "tas_pkt_handler_base.h"
 
 // Standard includes
+#include <deque>
 
 //! \brief Derived packet handler class for handling read/write packets
 class CTasPktHandlerRw : public CTasPktHandlerBase
 {
 
 public:
+
+	// Default limits.
+	// Limits are for all generated PL2 packets together.
+	static constexpr unsigned int RQ_PKT_BUF_SIZE_DEFAULT = 64 * (TAS_PL0_DATA_BLK_SIZE   
+        + sizeof(tas_pl2_header_st) 
+        + sizeof(tas_pl1rq_pl0_start_st) 
+        + sizeof(tas_pl0rq_acc_mode_st)
+        + sizeof(tas_pl0rq_addr_map_st)
+        + sizeof(tas_pl0rq_base_addr64_st)
+        + sizeof(tas_pl0rq_wrblk_st)
+        + sizeof(tas_pl1rq_pl0_end_st));
+	static constexpr unsigned int RSP_PKT_BUF_SIZE_DEFAULT = 64 * (TAS_PL0_DATA_BLK_SIZE   
+        + sizeof(tas_pl2_header_st) 
+        + sizeof(tas_pl1rq_pl0_start_st) 
+        + sizeof(tas_pl0rq_acc_mode_st)
+        + sizeof(tas_pl0rq_addr_map_st)
+        + sizeof(tas_pl0rq_base_addr64_st)
+        + sizeof(tas_pl0rq_rdblk_st)
+        + sizeof(tas_pl1rq_pl0_end_st)); //!< \brief default packet buffer size 64kiB data , 1kiB + packet overhead in case of 1kiB block read per PL2 -> default for miniWiggler
+	static constexpr unsigned int MAX_NUM_RW_DEFAULT = 256; //!< \brief default maximum number of read/write transactions across all generated PL2
+
 	CTasPktHandlerRw(const CTasPktHandlerRw&) = delete; //!< \brief delete the copy constructor
 	CTasPktHandlerRw operator= (const CTasPktHandlerRw&) = delete; //!< \brief delete copy-assignment operator
 
@@ -144,15 +166,7 @@ public:
 	//! \param pl0_trans pointer to a list of pl0 transactions, is the same as trans_rsp if no transaction was split into different PL2 packets
 	//! \param pl0_trans_rsp pointer to a list of pl0 transaction responses
 	//! \returns the number of transactions on PL0 level
-	uint32_t rw_get_pl0_trans(const tas_rw_trans_st** pl0_trans, const tas_rw_trans_rsp_st** pl0_trans_rsp) const;
-
-	//! \brief Default limits.
-	//! \details  Limits are for all generated PL2 packets together.
-	enum {
-		PKT_BUF_SIZE_DEFAULT = 0x10000,	//!< \brief default packet buffer size
-		MAX_NUM_RW_DEFAULT = 256,		//!< \brief default maximum number of read/write transactions
-		BUF_ALLOWANCE = 64,				//!< \brief buffer allowance for overhead
-	}; 
+	uint32_t rw_get_pl0_trans(std::deque<tas_rw_trans_st>& pl0_trans, std::deque<tas_rw_trans_rsp_st>& pl0_trans_rsp) const;
 
 private:
 
@@ -315,8 +329,10 @@ private:
 	uint32_t mRwNumTrans;   //!< \brief Used as index for mRwTrans[] and mRwTransRsp[]
 
 	// Resulting transactions on PL0 level
-	tas_rw_trans_st* mPl0Trans;	//!< \brief Pointer to an internal list of PL0 transactions
-	tas_rw_trans_rsp_st* mPl0TransRsp;	//! \brief Pointer to an internal list of PL0 transaction responses
+	//tas_rw_trans_st* mPl0Trans;	//!< \brief Pointer to an internal list of PL0 transactions
+	//tas_rw_trans_rsp_st* mPl0TransRsp;	//! \brief Pointer to an internal list of PL0 transaction responses
+	std::deque<tas_rw_trans_st> mPl0Trans;
+	std::deque<tas_rw_trans_rsp_st> mPl0TransRsp;
 	uint32_t mPl0NumTrans;   //!< \brief Number of PL0 transactions. Used also as index for mPl0Trans[] and mPl0TransRsp[]
 
 	uint32_t mNumTransMax;  //!< \brief mRwNumTrans <= mPl0NumTrans

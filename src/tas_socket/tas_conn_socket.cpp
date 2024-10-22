@@ -20,6 +20,9 @@
 // Socket lib includes
 #include "tas_conn_socket.h"
 
+// Standard includes
+#include <string>
+
 CTasConnSocket::CTasConnSocket(int type, int protocol) : CTasSocket(type, protocol) {};
 
 CTasConnSocket::CTasConnSocket(int conn_sock_desc) : CTasSocket(conn_sock_desc) {};
@@ -41,7 +44,9 @@ bool CTasConnSocket::connect(const char* hostname, unsigned short port, int time
 	hints.ai_socktype = SOCK_STREAM; // look for TCP
 	hints.ai_flags = AI_CANONNAME;
 
-	errcode = getaddrinfo(hostname, nullptr, &hints, &res);
+	std::string port_str = std::to_string(port);
+
+	errcode = getaddrinfo(hostname, port_str.c_str(), &hints, &res);
 	if (errcode != 0)
 		return false; // hostname could not be resolved
 

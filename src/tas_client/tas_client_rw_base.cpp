@@ -190,10 +190,17 @@ tas_return_et CTasClientRwBase::fill64(uint64_t addr, uint64_t value, uint32_t n
 
 tas_return_et CTasClientRwBase::mExecuteSingleTrans(const tas_rw_trans_st* trans, uint32_t* num_bytes_ok)
 {
-	if (tas_return_et ret = execute_trans(trans, 1); ret != TAS_ERR_NONE)
-	{
-		if (num_bytes_ok)
+	tas_return_et ret = TAS_ERR_NONE;
+
+	if (trans == nullptr) {
+		return TAS_ERR_FN_PARAM;
+	}
+
+	if (ret = execute_trans(trans, 1); ret != TAS_ERR_NONE && !(ret == TAS_ERR_RW_READ || ret == TAS_ERR_RW_WRITE)) {
+
+		if (num_bytes_ok != nullptr) {
 			*num_bytes_ok = 0;
+		}		
 		return ret;
 	}
 
@@ -202,10 +209,11 @@ tas_return_et CTasClientRwBase::mExecuteSingleTrans(const tas_rw_trans_st* trans
 	assert(numTrans == 1);
 	_unused(numTrans);
 
-	if (num_bytes_ok)
+	if (num_bytes_ok != nullptr) {
 		*num_bytes_ok = transRsp[0].num_bytes_ok;
+	}
 
-	return tas_clear_error_info(&mEi);
+	return (ret == TAS_ERR_RW_READ || ret == TAS_ERR_RW_WRITE) ? ret : tas_clear_error_info(&mEi);
 }
 
 tas_return_et CTasClientRwBase::execute_trans(const tas_rw_trans_st* trans, uint32_t num_trans)

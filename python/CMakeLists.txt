@@ -3,6 +3,17 @@ if (NOT TAS_CLIENT_API_BUILD_PYTHON)
     return()
 endif()
 
+# -----------------------------------------------------------------------------
+# Python project definition
+# -----------------------------------------------------------------------------
+set(PYTHON_PROJECT PyTAS)
+message(STATUS "Python project: ${PYTHON_PROJECT}")
+set(PYTHON_PROJECT_DIR ${PROJECT_BINARY_DIR}/python/src/${PYTHON_PROJECT})
+message(STATUS "Python project build path: ${PYTHON_PROJECT_DIR}")
+
+# -----------------------------------------------------------------------------
+# Find relevant dependencies
+# -----------------------------------------------------------------------------
 # Uncomment and spcify the root of Python installation if specific version should be used, otherwise the system default 
 # is selected 
 if (WIN32)
@@ -11,19 +22,54 @@ elseif (UNIX)
     #set(Python3_ROOT_DIR "/usr/bin/python3.11")
 endif()
 
-# Look for python executable
-find_package(Python3 COMPONENTS Interpreter Development)
-# Based on pybind11 this should be after find_package(Python3). However, with Python debug libs installed there is an issues. 
-find_package(pybind11 CONFIG)
-
-# Solution for an open issue due to installed python debug libs: https://github.com/pybind/pybind11/issues/3403
-set_target_properties(Python3::Module PROPERTIES
-        MAP_IMPORTED_CONFIG_DEBUG ";RELEASE")
+set(PYBIND11_FINDPYTHON ON)
+find_package(pybind11 CONFIG REQUIRED)
 
 if (NOT pybind11_FOUND)
-    message(FATAL_ERROR "pybind11 not found ${pybind11_FOUND}. Dependecies managed by conan, run 'conan install .' first")
+    message(FATAL_ERROR "pybind11 not found ${pybind11_FOUND}. Dependecies managed by conan, run 'conan install . -o python=True' first")
 endif()
 
+# ================================ General configuration ======================================
+# Solution for an open issue due to installed python debug libs: https://github.com/pybind/pybind11/issues/3403
+set_target_properties(Python::Module PROPERTIES
+        MAP_IMPORTED_CONFIG_DEBUG ";RELEASE")
+
+# Setup virtual pyton environment for testing and stub gen
+# Setup variables for targeting a virtual environment
+set(VENV_DIR "${CMAKE_CURRENT_BINARY_DIR}/pytas_venv")
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    set(VENV_BIN "${VENV_DIR}/Scripts")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(VENV_BIN "${VENV_DIR}/bin")
+else()
+    message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
+endif()
+
+# Create virtual environment
+if(NOT EXISTS ${VENV_DIR})
+    message(STATUS "Creating virtual environment...")
+    execute_process(
+        COMMAND ${Python_EXECUTABLE} -m venv ${VENV_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endif()
+
+cmake_path(GET Python_EXECUTABLE FILENAME Python_EXECUTABLE_NAME)
+find_program(Python_VENV_EXECUTABLE NAMES ${Python_EXECUTABLE_NAME} PATHS ${VENV_BIN} NO_CACHE NO_DEFAULT_PATH)
+message(STATUS "Python executable in venv: ${Python_VENV_EXECUTABLE}")
+
+if(NOT Python_VENV_EXECUTABLE)
+    message(FATAL_ERROR "Python executable not found in virtual environment: ${Python_VENV_EXECUTABLE}")
+endif()
+
+# Install required Python packages
+message(STATUS "Venv exe: ${Python_VENV_EXECUTABLE}")
+execute_process(
+    COMMAND ${Python_VENV_EXECUTABLE} -m pip install -r ${CMAKE_CURRENT_SOURCE_DIR}/requirements.txt
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# =============================== CMake target - bindings_library =============================
 pybind11_add_module(PyTAS
         binding/tas_python_binding.cpp
         binding/tas_python_binding.hpp
@@ -42,10 +88,7 @@ target_include_directories(PyTAS
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/binding"
 )
 
-set(PYTHON_PROJECT PyTAS)
-message(STATUS "Python project: ${PYTHON_PROJECT}")
-set(PYTHON_PROJECT_DIR ${PROJECT_BINARY_DIR}/python/src/${PYTHON_PROJECT})
-message(STATUS "Python project build path: ${PYTHON_PROJECT_DIR}")
+
 
 # -----------------------------------------------------------------------------
 # Python package
@@ -73,7 +116,7 @@ add_custom_command(
    
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:PyTAS> ${PYTHON_PROJECT_DIR}
 
-    COMMAND ${Python3_EXECUTABLE} setup.py sdist bdist_wheel
+    COMMAND ${Python_VENV_EXECUTABLE} setup.py sdist bdist_wheel
     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/dist/timestamp
 
     DEPENDS
@@ -98,22 +141,32 @@ add_custom_target(python_package ALL
 # -----------------------------------------------------------------------------
 # Python tests
 # -----------------------------------------------------------------------------
-set(VENV_EXECUTABLE ${Python3_EXECUTABLE} -m virtualenv)
-set(VENV_DIR ${CMAKE_CURRENT_BINARY_DIR}/venv)
-if(WIN32)
-    set(VENV_Python3_EXECUTABLE ${VENV_DIR}/Scripts/python.exe)
-else()
-    set(VENV_Python3_EXECUTABLE ${VENV_DIR}/bin/python)
+# Check if the Python executable exists
+if(NOT Python_VENV_EXECUTABLE)
+    message(FATAL_ERROR "Python executable not found in virtual environment.")
 endif()
 
+# Install the .whl file using a custom script to ensure platform independence
+file(WRITE ${CMAKE_BINARY_DIR}/install_whl.py
+"import os
+import subprocess
+import glob
+
+whl_dir = os.path.join('${CMAKE_CURRENT_BINARY_DIR}', 'dist')
+whl_files = glob.glob(os.path.join(whl_dir, '*.whl'))
+
+if whl_files:
+    for whl_file in whl_files:
+        print(f'Installing {whl_file}')
+        subprocess.check_call(['${Python_VENV_EXECUTABLE}', '-m', 'pip', 'install', '--force-reinstall', '--no-deps', '--upgrade', whl_file])
+else:
+    raise FileNotFoundError('No .whl file found in the specified directory')
+")
+
 add_custom_command(TARGET python_package POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E remove_directory ${VENV_DIR}
-    COMMAND ${VENV_EXECUTABLE} -p ${Python3_EXECUTABLE} ${VENV_DIR}
-    COMMAND ${VENV_Python3_EXECUTABLE} -m pip install numpy
-    COMMAND ${VENV_Python3_EXECUTABLE} -m pip install --find-links=${CMAKE_CURRENT_BINARY_DIR}/dist ${PYTHON_PROJECT}
-    BYPRODUCTS ${VENV_DIR}
+    COMMAND ${Python_VENV_EXECUTABLE} ${CMAKE_BINARY_DIR}/install_whl.py
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    COMMENT "Create venv and install ${PYTHON_PROJECT}"
+    COMMENT "Installing ${PYTHON_PROJECT}"
     VERBATIM
 )
 
@@ -130,7 +183,7 @@ function(add_python_test FILE_NAME)
   if(BUILD_TESTING)
     add_test(
       NAME python_test_${EXAMPLE_NAME}
-      COMMAND ${VENV_Python3_EXECUTABLE} ${FILE_NAME}
+      COMMAND ${Python_VENV_EXECUTABLE} ${FILE_NAME}
       WORKING_DIRECTORY ${VENV_DIR})
   endif()
   message(STATUS "Configuring test ${FILE_NAME} done")

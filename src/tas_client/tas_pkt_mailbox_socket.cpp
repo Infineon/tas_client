@@ -29,7 +29,7 @@ bool CTasPktMailboxSocket::server_connect(const char* ip_addr, uint16_t port_num
 	assert(!connected());
 
 	mSocket = new CTasTcpSocket();
-	if (!mSocket->connect(ip_addr, port_num))
+	if (!mSocket->connect(ip_addr, port_num, mTimeoutMs))
 	{
 		return false;
 	}
@@ -37,10 +37,10 @@ bool CTasPktMailboxSocket::server_connect(const char* ip_addr, uint16_t port_num
 	return true;
 }
 
-void CTasPktMailboxSocket::config(uint32_t timeout_receive_ms, uint32_t max_num_bytes_rsp)
+void CTasPktMailboxSocket::config(uint32_t timeout_ms, uint32_t max_num_bytes_rsp)
 {
 	assert(max_num_bytes_rsp % 4 == 0);
-	mTimeoutReceiveMs = timeout_receive_ms;
+	mTimeoutMs = timeout_ms;
 	mMaxNumBytesRsp = max_num_bytes_rsp;
 }
 
@@ -141,7 +141,7 @@ bool CTasPktMailboxSocket::mSocketSend(const uint32_t* rq, uint32_t num_bytes)
 {
 	assert(num_bytes % 4 == 0);
 
-	if (mSocket->send(rq, num_bytes) <= 0)
+	if (mSocket->send(rq, num_bytes, mTimeoutMs) <= 0)
 	{
 		mSocketDisconnect();
 		return false;
@@ -154,7 +154,7 @@ bool CTasPktMailboxSocket::mSocketReceive(uint32_t w, uint32_t num_bytes)
 {
 	mRspBuf[w] = 0;
 
-	if (mSocket->recv(&mRspBuf[w], num_bytes, (int)mTimeoutReceiveMs) <= 0)
+	if (mSocket->recv(&mRspBuf[w], num_bytes, (int)mTimeoutMs) <= 0)
 	{
 		mSocketDisconnect();
 		return false;

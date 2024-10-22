@@ -31,7 +31,7 @@
 #ifdef _DEBUG
 enum { TAS_DEFAULT_TIMEOUT_MS = -1 }; 		//!< \brief No timeout
 #else
-enum { TAS_DEFAULT_TIMEOUT_MS = 20000 }; 	//!< \brief 20s
+enum { TAS_DEFAULT_TIMEOUT_MS = 2000 }; 	//!< \brief 2s
 #endif
 
 //! \brief TAS error information including c-string and an error code.

@@ -27,11 +27,12 @@
 #include <cinttypes>
 #include <memory>
 #include <array>
+#include <deque>
 
 CTasPktHandlerRw::CTasPktHandlerRw(tas_error_info_st* ei, const tas_con_info_st* con_info)
     : CTasPktHandlerBase(ei)
 {
-    mInit(PKT_BUF_SIZE_DEFAULT, PKT_BUF_SIZE_DEFAULT, con_info->pl0_max_num_rw);
+    mInit(RQ_PKT_BUF_SIZE_DEFAULT, RSP_PKT_BUF_SIZE_DEFAULT, con_info->pl0_max_num_rw);
     assert(mConInfo.max_pl2rq_pkt_size >= con_info->max_pl2rq_pkt_size);
     assert(mConInfo.max_pl2rsp_pkt_size >= con_info->max_pl2rsp_pkt_size);
     memcpy(&mConInfo, con_info, sizeof(tas_con_info_st));
@@ -47,14 +48,12 @@ void CTasPktHandlerRw::mInit(uint32_t max_rq_size, uint32_t max_rsp_size, uint32
 {
     assert(max_rq_size % 4 == 0);
     assert(max_rsp_size % 4 == 0);
-    assert(max_rq_size >= 4 * BUF_ALLOWANCE);  // There is no reason not to be generous
-    assert(max_rsp_size >= 4 * BUF_ALLOWANCE);  // There is no reason not to be generous
 
     // From CTasPktHandlerBase, allocated and set here in the derived class:
     mRqBuf = new uint32_t[max_rq_size / 4];
-    mMaxRqSize = max_rq_size - BUF_ALLOWANCE;
+    mMaxRqSize = max_rq_size;
     mRqWiMax = mMaxRqSize / 4;
-    mMaxRspSize = max_rsp_size - BUF_ALLOWANCE;
+    mMaxRspSize = max_rsp_size;
 
     mConInfo.max_pl2rq_pkt_size = mMaxRqSize;
     mConInfo.max_pl2rsp_pkt_size = mMaxRspSize;
@@ -63,8 +62,6 @@ void CTasPktHandlerRw::mInit(uint32_t max_rq_size, uint32_t max_rsp_size, uint32
     mNumTransMax = max_num_rw;
     mRwTrans = new tas_rw_trans_st[mNumTransMax];
     mRwTransRsp = new tas_rw_trans_rsp_st[mNumTransMax];
-    mPl0Trans = new tas_rw_trans_st[mNumTransMax];
-    mPl0TransRsp = new tas_rw_trans_rsp_st[mNumTransMax];
 
     mRqBufWi = 0;
     mPl0NumTrans = 0;
@@ -88,8 +85,6 @@ CTasPktHandlerRw::~CTasPktHandlerRw()
     delete[] mRqBuf;
     delete[] mRwTrans;
     delete[] mRwTransRsp;
-    delete[] mPl0Trans;
-    delete[] mPl0TransRsp;
 }
 
 void CTasPktHandlerRw::rw_start()
@@ -112,10 +107,22 @@ void CTasPktHandlerRw::rw_start()
 
     mPl2RspPktStart = 0;
 
-    mMaxWrDataBlkSizeInPktRq  = mConInfo.max_pl2rq_pkt_size  - 24;  // For blk
+    mMaxWrDataBlkSizeInPktRq  = mConInfo.max_pl2rq_pkt_size 
+        - sizeof(tas_pl2_header_st) 
+        - sizeof(tas_pl1rq_pl0_start_st) 
+        - sizeof(tas_pl0rq_acc_mode_st)
+        - sizeof(tas_pl0rq_addr_map_st)
+        - sizeof(tas_pl0rq_base_addr64_st)
+        - sizeof(tas_pl0rq_wrblk_st)
+        - sizeof(tas_pl1rq_pl0_end_st); // Worst case for blk
     if (mMaxWrDataBlkSizeInPktRq > TAS_PL0_DATA_BLK_SIZE)
         mMaxWrDataBlkSizeInPktRq = TAS_PL0_DATA_BLK_SIZE;
-    mMaxRdDataBlkSizeInPktRsp = mConInfo.max_pl2rsp_pkt_size - 24;  // For blk
+
+    mMaxRdDataBlkSizeInPktRsp = mConInfo.max_pl2rsp_pkt_size 
+        - sizeof(tas_pl2_header_st) 
+        - sizeof(tas_pl1rsp_pl0_start_st) 
+        - sizeof(tas_pl0rsp_rdblk1kb_st)
+        - sizeof(tas_pl1rsp_pl0_end_st); // Worst case for blk
     if (mMaxRdDataBlkSizeInPktRsp > TAS_PL0_DATA_BLK_SIZE)
         mMaxRdDataBlkSizeInPktRsp = TAS_PL0_DATA_BLK_SIZE;
 
@@ -242,16 +249,19 @@ void CTasPktHandlerRw::mPktAdd_Rd(uint64_t addr, uint32_t num_bytes, void* data,
         mRspSize += sizeof(tas_pl0rsp_rd_st) + num_bytes;
     }
 
-    tas_rw_trans_st* pt = &mPl0Trans[mPl0NumTrans];
-    pt->addr = addr;
-    pt->num_bytes = num_bytes;
-    pt->acc_mode = mPl0AccMode;
-    pt->addr_map = mPl0AddrMap;
-    pt->type = TAS_RW_TT_RD;
-    pt->rdata = data;
+    tas_rw_trans_st pl0Trans;
+    pl0Trans.addr = addr;
+    pl0Trans.num_bytes = num_bytes;
+    pl0Trans.acc_mode = mPl0AccMode;
+    pl0Trans.addr_map = mPl0AddrMap;
+    pl0Trans.type = TAS_RW_TT_RD;
+    pl0Trans.rdata = data;
+    mPl0Trans.emplace_back(pl0Trans);
 
-    mPl0TransRsp[mPl0NumTrans].num_bytes_ok = 0;
-    mPl0TransRsp[mPl0NumTrans].pl_err = TAS_PL_ERR_PROTOCOL;
+    tas_rw_trans_rsp_st pl0TransRsp;
+    pl0TransRsp.num_bytes_ok = 0;
+    pl0TransRsp.pl_err = TAS_PL_ERR_PROTOCOL;
+    mPl0TransRsp.emplace_back(pl0TransRsp);
     
     mPl0NumTrans++;
     mPl2NumTrans++;
@@ -319,16 +329,19 @@ void CTasPktHandlerRw::mPktAdd_Wr(uint64_t addr, uint32_t num_bytes, const void*
         mRspSize += sizeof(tas_pl0rsp_wr_st);
     }
 
-    tas_rw_trans_st* pt = &mPl0Trans[mPl0NumTrans];
-    pt->addr = addr;
-    pt->num_bytes = num_bytes;
-    pt->acc_mode = mPl0AccMode;
-    pt->addr_map = mPl0AddrMap;
-    pt->type = TAS_RW_TT_WR;
-    pt->wdata = data;
+    tas_rw_trans_st pl0Trans;
+    pl0Trans.addr = addr;
+    pl0Trans.num_bytes = num_bytes;
+    pl0Trans.acc_mode = mPl0AccMode;
+    pl0Trans.addr_map = mPl0AddrMap;
+    pl0Trans.type = TAS_RW_TT_WR;
+    pl0Trans.wdata = data;
+    mPl0Trans.emplace_back(pl0Trans);
 
-    mPl0TransRsp[mPl0NumTrans].num_bytes_ok = 0;
-    mPl0TransRsp[mPl0NumTrans].pl_err = TAS_PL_ERR_PROTOCOL;
+    tas_rw_trans_rsp_st pl0TransRsp;
+    pl0TransRsp.num_bytes_ok = 0;
+    pl0TransRsp.pl_err = TAS_PL_ERR_PROTOCOL;
+    mPl0TransRsp.emplace_back(pl0TransRsp);
 
     mPl0NumTrans++;
     mPl2NumTrans++;
@@ -362,16 +375,19 @@ void CTasPktHandlerRw::mPktAdd_Fill(uint64_t addr, uint32_t num_bytes, uint64_t 
     assert(mRqBufWi < mRqWiMax);
     mRspSize += sizeof(tas_pl0rsp_wr_st);
 
-    tas_rw_trans_st* pt = &mPl0Trans[mPl0NumTrans];
-    pt->addr = addr;
-    pt->num_bytes = num_bytes;
-    pt->acc_mode = mPl0AccMode;
-    pt->addr_map = mPl0AddrMap;
-    pt->type = TAS_RW_TT_FILL;
-    pt->wdata = &pl0Fill->value;
+    tas_rw_trans_st pl0Trans;
+    pl0Trans.addr = addr;
+    pl0Trans.num_bytes = num_bytes;
+    pl0Trans.acc_mode = mPl0AccMode;
+    pl0Trans.addr_map = mPl0AddrMap;
+    pl0Trans.type = TAS_RW_TT_FILL;
+    pl0Trans.wdata = &pl0Fill->value;
+    mPl0Trans.emplace_back(pl0Trans);
 
-    mPl0TransRsp[mPl0NumTrans].num_bytes_ok = 0;
-    mPl0TransRsp[mPl0NumTrans].pl_err = TAS_PL_ERR_PROTOCOL;
+    tas_rw_trans_rsp_st pl0TransRsp;
+    pl0TransRsp.num_bytes_ok = 0;
+    pl0TransRsp.pl_err = TAS_PL_ERR_PROTOCOL;
+    mPl0TransRsp.emplace_back(pl0TransRsp);
 
     mPl0NumTrans++;
     mPl2NumTrans++;
@@ -433,14 +449,41 @@ void CTasPktHandlerRw::mPktFinalize(bool init_next_pl2_pkt)
 
 bool CTasPktHandlerRw::mCheckLimits(uint32_t num_bytes_rd, uint32_t num_bytes_wr) const
 {
-    if (mRqBufWi * 4 + num_bytes_wr + 4 >= mRqWiMax * 4) {
-        assert(mRqBufWi * 4 <= mRqWiMax * 4 + BUF_ALLOWANCE);
-        return false;
+    // check if the requested bytes to be written will fit into the request packet buffer
+    if (num_bytes_wr != 0) {
+        uint32_t payload = num_bytes_wr
+            + sizeof(tas_pl0rq_acc_mode_st)
+            + sizeof(tas_pl0rq_addr_map_st)
+            + sizeof(tas_pl0rq_base_addr64_st);
+
+        uint32_t payloadPerPkt = mConInfo.max_pl2rq_pkt_size
+            - sizeof(tas_pl2_header_st)
+            - sizeof(tas_pl1rq_pl0_start_st)
+            - sizeof(tas_pl0rq_wrblk_st)
+            - sizeof(tas_pl1rq_pl0_end_st);
+
+        uint32_t numPl2 = (payload + payloadPerPkt - 1) / payloadPerPkt;
+        if (mConInfo.max_pl2rq_pkt_size * numPl2 > mRqWiMax * 4 ) {
+            return false;
+        }
     }
-    if (mRspSize + num_bytes_rd + 4 >= mMaxRspSize) {
-        assert(mRspSize <= mMaxRspSize + BUF_ALLOWANCE);
-        return false;
+
+    // check if the requested bytes to be read will fit into the response packet buffer
+    if (num_bytes_rd != 0) {
+        uint32_t payload = num_bytes_rd;
+
+        uint32_t payloadPerPkt = mConInfo.max_pl2rsp_pkt_size
+            - sizeof(tas_pl2_header_st)
+            - sizeof(tas_pl1rsp_pl0_start_st)
+            - sizeof(tas_pl0rsp_rdblk1kb_st)
+            - sizeof(tas_pl1rsp_pl0_end_st);
+
+        uint32_t numPl2 = (payload + payloadPerPkt - 1) / payloadPerPkt;
+        if (mConInfo.max_pl2rsp_pkt_size * numPl2 > mMaxRspSize) {
+            return false;
+        }
     }
+    
     return true;
 }
 
@@ -598,7 +641,13 @@ uint32_t CTasPktHandlerRw::mGetWrDataBlkSizeInPktRq(uint32_t num_bytes, uint64_t
     assert(num_bytes >= 8);
     uint32_t nb = num_bytes;
 
-    uint32_t numBytesProtocol   = sizeof(tas_pl0rq_wrblk_st) + sizeof(tas_pl1rq_pl0_end_st);
+    // worst case access mode, address map and base address would need to fit along side write packet
+    uint32_t numBytesProtocol   = sizeof(tas_pl0rq_acc_mode_st) 
+        + sizeof(tas_pl0rq_addr_map_st) 
+        + sizeof(tas_pl0rq_base_addr64_st)
+        + sizeof(tas_pl0rq_wrblk_st) 
+        + sizeof(tas_pl1rq_pl0_end_st);
+
     uint32_t numDataBlkBytesMax = mGetRemainingSizeInPktRq();
     if (numBytesProtocol >= numDataBlkBytesMax) {
         assert(numDataBlkBytesMax >= sizeof(tas_pl1rq_pl0_end_st));  // Need to finalize this pkt
@@ -606,9 +655,6 @@ uint32_t CTasPktHandlerRw::mGetWrDataBlkSizeInPktRq(uint32_t num_bytes, uint64_t
     }
 
     numDataBlkBytesMax -= numBytesProtocol;
-
-    if (addr >= 0x100000000)
-        numDataBlkBytesMax -= sizeof(tas_pl0rq_base_addr64_st);
 
     if (nb > numDataBlkBytesMax)
         nb = numDataBlkBytesMax;
@@ -652,8 +698,8 @@ bool CTasPktHandlerRw::rw_add_rd(uint64_t addr, uint32_t num_bytes, void* data, 
     if (addrMap > TAS_AM15)
         return false;
 
-    if (!mNumTransManageableRd(addr, num_bytes))
-        mPktFinalize();
+    // if (!mNumTransManageableRd(addr, num_bytes))
+    //     mPktFinalize();
 
     // Start new PL2 packet if needed
     bool newPl2Pkt = false;
@@ -743,8 +789,8 @@ bool CTasPktHandlerRw::rw_add_wr(uint64_t addr, uint32_t num_bytes, const void* 
     if (addrMap > TAS_AM15)
         return false;
 
-    if (!mNumTransManageableWr(addr, num_bytes))
-        mPktFinalize();
+    // if (!mNumTransManageableWr(addr, num_bytes))
+    //     mPktFinalize();
 
     // Start new PL2 packet if needed
     bool newPl2Pkt = false;
@@ -833,8 +879,8 @@ bool CTasPktHandlerRw::rw_add_fill(uint64_t addr, uint32_t num_bytes, uint64_t v
     if (!mCheckLimits(0, num_bytes))  // 8 not num_bytes for fill
         return false;
 
-    if (!mNumTransManageableWr(addr, 8))  // 8 not num_bytes for fill
-        mPktFinalize();
+    // if (!mNumTransManageableWr(addr, 8))  // 8 not num_bytes for fill
+    //     mPktFinalize();
 
     // Start new PL2 packet if needed
     bool newPl2Pkt = !mCheckRemainingPktSizeSufficient(32 + 8, 32);  // 8 not num_bytes for fill
@@ -869,6 +915,10 @@ bool CTasPktHandlerRw::rw_add_fill(uint64_t addr, uint32_t num_bytes, uint64_t v
 bool CTasPktHandlerRw::rw_set_trans(const tas_rw_trans_st* trans, uint32_t num_trans)
 {
     rw_start();
+    // Clear transaction lists when new set of transactions is requested
+    // it is done outside of rw_start in case we need fetch the transaction list when debugging
+    mPl0Trans.clear();
+    mPl0TransRsp.clear();
 
     bool succ = false;
     for (uint32_t t = 0; t < num_trans; t++) {
@@ -900,7 +950,7 @@ bool CTasPktHandlerRw::rw_set_trans(const tas_rw_trans_st* trans, uint32_t num_t
 
 uint32_t CTasPktHandlerRw::rw_get_rq_size() const
 {
-    assert((mRqBufWi * 4) <= mMaxRqSize + BUF_ALLOWANCE);
+    assert((mRqBufWi * 4) <= mMaxRqSize);
     if (mGetPktRqWasCalled == false)
         return (mRqBufWi * 4) + sizeof(tas_pl1rq_pl0_end_st);
     else
@@ -909,7 +959,7 @@ uint32_t CTasPktHandlerRw::rw_get_rq_size() const
 
 uint32_t CTasPktHandlerRw::rw_get_rsp_size() const
 {
-    assert(mRspSize <= mMaxRspSize + BUF_ALLOWANCE);
+    assert(mRspSize <= mMaxRspSize);
     if (mGetPktRqWasCalled == false)
         return mRspSize + sizeof(tas_pl1rsp_pl0_end_st);
     else
@@ -1052,7 +1102,7 @@ tas_return_et CTasPktHandlerRw::rw_set_rsp(const uint32_t* rsp, uint32_t num_byt
                 return mSetPktRspErrPl1Cnt();
             }
             wi += sizeof(tas_pl1rsp_pl0_end_st) / 4;
-            if (iTrans == mPl0NumTrans) {
+            if (iTrans == mPl0NumTrans) { // mPl0NumTrans will be the accumulated number of PL0 transaction across multiple PL2
                 assert(mPl1CntOutstandingOldest == mPl1CntOutstandingLast);
                 break;
             }
@@ -1206,10 +1256,10 @@ uint32_t CTasPktHandlerRw::rw_get_trans_rsp(const tas_rw_trans_rsp_st** trans_rs
     return mRwNumTrans;
 }
 
-uint32_t CTasPktHandlerRw::rw_get_pl0_trans(const tas_rw_trans_st** pl0_trans, const tas_rw_trans_rsp_st** pl0_trans_rsp) const
+uint32_t CTasPktHandlerRw::rw_get_pl0_trans(std::deque<tas_rw_trans_st>& pl0_trans, std::deque<tas_rw_trans_rsp_st>& pl0_trans_rsp) const
 {
-    *pl0_trans     = mPl0Trans;
-    *pl0_trans_rsp = mPl0TransRsp;
+    pl0_trans     = mPl0Trans;
+    pl0_trans_rsp = mPl0TransRsp;
     return mPl0NumTrans;
 }
 

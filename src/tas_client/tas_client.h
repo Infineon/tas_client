@@ -96,7 +96,7 @@ struct tas_rw_trans_st {
 
 //! \brief Read/write transaction response
 struct tas_rw_trans_rsp_st {
-	uint16_t num_bytes_ok;		//!< \brief Number of bytes successfully read/written
+	uint32_t num_bytes_ok;		//!< \brief Number of bytes successfully read/written
 	tas_pl_err_et8 pl_err;		//!< \brief PL Error code \ref tas_pl_err_et8
 };
 //! \} // end of group Client_API
